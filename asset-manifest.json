@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/sentiment-analysis/static/css/main.885ce9f1.css",
-    "main.js": "/sentiment-analysis/static/js/main.302c039e.js",
+    "main.js": "/sentiment-analysis/static/js/main.a653c838.js",
     "index.html": "/sentiment-analysis/index.html",
     "main.885ce9f1.css.map": "/sentiment-analysis/static/css/main.885ce9f1.css.map",
-    "main.302c039e.js.map": "/sentiment-analysis/static/js/main.302c039e.js.map"
+    "main.a653c838.js.map": "/sentiment-analysis/static/js/main.a653c838.js.map"
   },
   "entrypoints": [
     "static/css/main.885ce9f1.css",
-    "static/js/main.302c039e.js"
+    "static/js/main.a653c838.js"
   ]
 }
