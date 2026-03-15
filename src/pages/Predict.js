@@ -22,7 +22,7 @@ export default function Predict() {
     setResult(null);
 
     try {
-      const API_URL = 'https://sentiment-api-711n.onrender.com';
+      const API_URL = 'http://localhost:5000';
       const response = await fetch(`${API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
