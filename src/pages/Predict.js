@@ -29,11 +29,14 @@ export default function Predict() {
         body: JSON.stringify({ review })
       });
 
-      if (!response.ok) throw new Error('API error');
       const data = await response.json();
-      setResult(data);
+      if (!response.ok) {
+        setError(data.error || 'API error');
+      } else {
+        setResult(data);
+      }
     } catch {
-      setError('Backend not running. Start it with: python api.py');
+      setError('Connecting to server... Please wait 30 seconds and try again (free server wakes up slowly)');
     }
     setLoading(false);
   };
