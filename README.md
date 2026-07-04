@@ -20,73 +20,174 @@ The project also addresses a critical **data bias problem** — the original emo
 
 ---
 
-## 🏗️ Project Architecture & Workflow
+## 🏗️ Project Architecture
+
+The project follows a **two-phase architecture**: an offline ML training pipeline produces model artifacts, and a React SPA consumes those results both via hardcoded stats and a live prediction API.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    USER (Browser)                           │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │              React Frontend (CRA)                    │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │  │
-│  │  │Dashboard │ │ Predict  │ │  Bias    │ │ Model  │ │  │
-│  │  │  Page    │ │  Page    │ │ Analysis │ │ Compare│ │  │
-│  │  ├──────────┤ ├──────────┤ ├──────────┤ ├────────┤ │  │
-│  │  │ Sparsity │ │   Top    │ │           │ │        │ │  │
-│  │  │ Analysis │ │ Features │ │           │ │        │ │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └────────┘ │  │
-│  │                        │                            │  │
-│  │              ┌─────────┴──────────┐                 │  │
-│  │              │  Axios / Fetch     │                 │  │
-│  │              │  API Client        │                 │  │
-│  │              └─────────┬──────────┘                 │  │
-│  └────────────────────────┼────────────────────────────┘  │
-└───────────────────────────┼────────────────────────────────┘
-                            │ POST /api/predict
-                            │ { "review": "text..." }
-                            ▼
-              ┌───────────────────────────────┐
-              │   Python Backend (Flask)      │
-              │   Running on localhost:5000    │
-              │   or Render (free tier)       │
-              └───────────────┬───────────────┘
-                              │
-              ┌───────────────▼───────────────┐
-              │   Trained Logistic Regression │
-              │   Model (L2 Regularized)      │
-              │   + TF-IDF Vectorizer         │
-              └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        PHASE 1: OFFLINE ML PIPELINE                     │
+│                                                                         │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────────────────────┐  │
+│  │  Raw Dataset  │───▶│ Preprocessing│───▶│  TF-IDF Vectorization    │  │
+│  │  46,173 rows  │    │ → Clean      │    │  50,000 features         │  │
+│  │  7 columns    │    │ → Remove     │    │  Text → Numeric vectors  │  │
+│  │               │    │   neutral    │    │                           │  │
+│  └──────────────┘    └──────────────┘    └──────────────┬────────────┘  │
+│                                                         │               │
+│                                                         ▼               │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                  Model Training (Logistic Regression)            │   │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  │   │
+│  │  │  No Regularization│  │  L2 (Ridge)      │  │  L1 (Lasso)  │  │   │
+│  │  │  C = 1e9         │  │  C = 1.0         │  │  C = 1.0     │  │   │
+│  │  │  100% train      │  │  97.68% train    │  │  95.18% train│  │   │
+│  │  │  96.64% test     │  │  95.48% test     │  │  93.61% test │  │   │
+│  │  └──────────────────┘  └──────────────────┘  └───────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                    │                                    │
+│                                    ▼                                    │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                    Artifacts Exported                            │   │
+│  │  ┌──────────────────────┐  ┌──────────────────────────────────┐  │   │
+│  │  │  modelStats.js       │  │  Trained Model + TF-IDF Vectorizer│  │   │
+│  │  │  (Hardcoded JS obj)  │  │  (serialized via pickle)         │  │   │
+│  │  └──────────┬───────────┘  └───────────────┬──────────────────┘  │   │
+│  └─────────────┼──────────────────────────────┼──────────────────────┘   │
+└────────────────┼──────────────────────────────┼──────────────────────────┘
+                 │                              │
+                 ▼                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PHASE 2: REACT FRONTEND (SPA)                     │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                          App.js (Root)                          │   │
+│  │           State-based page routing via activePage state          │   │
+│  └──────────┬───────────┬──────────┬──────────┬──────────┬─────────┘   │
+│             │           │          │          │          │             │
+│             ▼           ▼          ▼          ▼          ▼             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐     │
+│  │Dashboard │ │  Bias    │ │  Model   │ │ Sparsity │ │   Top    │     │
+│  │          │ │ Analysis │ │Comparison│ │ Analysis │ │ Features │     │
+│  │  Reads   │ │  Reads   │ │  Reads   │ │  Reads   │ │  Reads   │     │
+│  │ from     │ │ from     │ │ from     │ │ from     │ │ from     │     │
+│  │modelStats│ │modelStats│ │modelStats│ │modelStats│ │modelStats│     │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘     │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  Predict Page (Live API Consumer)                               │   │
+│  │                                                                  │   │
+│  │  ┌──────────┐         POST /api/predict         ┌────────────┐  │   │
+│  │  │  User    │ ──────────────────────────────────▶│   Flask    │  │   │
+│  │  │  Types   │  { "review": "amazing movie..." }  │  Backend   │  │   │
+│  │  │  Review  │◀──────────────────────────────────│ localhost: │  │   │
+│  │  └──────────┘  { sentiment, confidence, ... }    │   5000     │  │   │
+│  │                                                   └─────┬──────┘  │   │
+│  │                                                         │         │   │
+│  │                                                   ┌─────▼──────┐  │   │
+│  │                                                   │  Pretrained│  │   │
+│  │                                                   │   Model    │  │   │
+│  │                                                   │  + TF-IDF  │  │   │
+│  │                                                   └────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              Sidebar (Navigation Component)                     │   │
+│  │   Dashboard │ Live Prediction │ Bias Analysis │ Model Comparison│   │
+│  │   Sparsity Analysis │ Top Features                              │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 🔄 Complete Workflow
 
-#### 1️⃣ Data Collection & Preprocessing
-- **Dataset:** 46,173 movie reviews from a public dataset
-- **7 columns:** Ratings (1–10), Reviews (text), movie_name, Resenhas, genres, Description, emotion
-- **Cleaning:** Removed duplicates and noisy entries → **38,260 clean reviews**
-- **Neutral Removal:** Removed 7,913 neutral reviews (ratings 5 & 6) to create a binary classification task
-- **Label Assignment:** Ratings ≤ 4 → **Negative**, Ratings ≥ 7 → **Positive**
-- **Final Split:** 30,608 training samples / 7,652 test samples
+The project operates in two distinct phases:
 
-#### 2️⃣ Feature Engineering
-- **TF-IDF Vectorization** (Term Frequency — Inverse Document Frequency)
-- Extracts **50,000 features** from the review text
-- Captures the importance of each word relative to the document and the entire corpus
-- Converts raw text into numerical feature vectors for model training
+---
 
-#### 3️⃣ Model Training (3 Variants)
-All models use **Logistic Regression** from scikit-learn with different regularization strategies:
+#### PHASE 1 — OFFLINE ML TRAINING (Python / scikit-learn)
 
-- **No Regularization (C=1e9):** Maximum likelihood estimation without penalty. Perfect training accuracy (100%) but slight overfitting (3.36% gap).
-- **L2 Regularization / Ridge (C=1.0):** Adds squared coefficient magnitude penalty. Best balance — 97.68% train / 95.48% test with only 2.20% overfit gap.
-- **L1 Regularization / Lasso (C=1.0):** Adds absolute coefficient magnitude penalty. Produces **97.8% sparsity** (48,904 of 50,000 coefficients forced to zero), making it memory-efficient but slightly less accurate.
+This phase is executed outside the frontend repo (in a Jupyter Notebook or Python script) and produces all the data consumed by the React app.
 
-#### 4️⃣ Hyperparameter Tuning
-- Tested C values from 0.01 to 50.0
-- **Best configuration:** C = 50.0 with L2 regularization → **96.94% test accuracy**
-- Results show clear trade-off: higher C → higher train accuracy but increased overfitting
+##### Step 1: Data Collection & Preprocessing
+| Stage | Detail |
+|-------|--------|
+| **Raw Dataset** | 46,173 movie reviews with 7 columns: `Ratings`, `Reviews`, `movie_name`, `Resenhas`, `genres`, `Description`, `emotion` |
+| **Cleaning** | Remove duplicates, missing values, and noisy entries → **38,260 clean reviews** |
+| **Neutral Removal** | Remove 7,913 neutral reviews (ratings 5 & 6) to create a clean binary classification task |
+| **Label Assignment** | Ratings 1–4 → **Negative**, Ratings 7–10 → **Positive** |
+| **Train/Test Split** | 30,608 training samples (80%) / 7,652 test samples (20%) |
 
-#### 5️⃣ Frontend Visualization
-The React dashboard visualizes all training results through 6 interactive pages:
+##### Step 2: Feature Engineering — TF-IDF Vectorization
+Text data is converted into numerical feature vectors using **TF-IDF (Term Frequency — Inverse Document Frequency)**:
+
+- **Term Frequency (TF):** Measures how frequently a word appears in a review — `TF(t) = (Number of times term t appears) / (Total terms in document)`
+- **Inverse Document Frequency (IDF):** Down-weights words that appear frequently across all reviews — `IDF(t) = log(Total documents / Documents containing term t)`
+- **TF-IDF Score:** `TF-IDF(t) = TF(t) × IDF(t)` — higher values indicate words that are important to a specific review but rare across the corpus
+- **Output:** A sparse matrix of shape `(38,260 × 50,000)` — each review is now a 50,000-dimensional numerical vector
+
+##### Step 3: Model Training (3 Logistic Regression Variants)
+Three Logistic Regression classifiers are trained on the TF-IDF vectors:
+
+```
+Logistic Regression minimizes:  L(θ) = -Σ[ y⋅log(h(x)) + (1-y)⋅log(1-h(x)) ] + λ⋅R(θ)
+                                                                           ↑
+                                                              Regularization term
+```
+
+| Model | Regularizer `R(θ)` | C (inverse reg strength) | Effect |
+|-------|-------------------|-------------------------|--------|
+| **No Regularization** | 0 (none) | 1e9 | Maximizes training fit; highest variance |
+| **L2 (Ridge)** | ‖θ‖₂² = Σθⱼ² | 1.0 | Penalizes large coefficients; shrinks weights evenly |
+| **L1 (Lasso)** | ‖θ‖₁ = Σ\|θⱼ\| | 1.0 | Penalizes absolute magnitude; forces many weights to **exactly zero** |
+
+##### Step 4: Hyperparameter Tuning
+- C values tested: `[0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0]`
+- Lower C → stronger regularization → lower train accuracy, less overfitting
+- Higher C → weaker regularization → higher train accuracy, more overfitting
+- **Best found:** C = 50.0 with L2 → **96.94% test accuracy**
+
+##### Step 5: Artifact Export
+The training pipeline produces two artifacts:
+
+1. **`modelStats.js`** — All metrics, coefficients, confusion matrices, and tuning results are hardcoded into a JavaScript object for dashboard rendering
+2. **Pickled Model + Vectorizer** — The best model (L2, C=1.0) and TF-IDF vectorizer are serialized for the Flask backend to serve live predictions
+
+---
+
+#### PHASE 2 — FRONTEND RENDERING (React SPA)
+
+The React app consumes Phase 1 artifacts in two distinct ways:
+
+##### Pages that read from `modelStats.js` (hardcoded data)
+These 5 pages render pre-computed results directly — no API calls needed:
+
+| Page | Data Displayed | Source in modelStats.js |
+|------|---------------|----------------------|
+| **Dashboard** | Stat cards, accuracy bar chart, sentiment donut, model cards | `dataset`, `models`, `bias.sentiment_pct` |
+| **Bias Analysis** | Emotion distribution, ratings distribution, sentiment split | `bias.*` |
+| **Model Comparison** | 3 model cards with metrics + confusion matrices + tuning chart | `models.*`, `tuning.*` |
+| **Sparsity Analysis** | Zero coefficient counts across models | `sparsity.*` |
+| **Top Features** | Top 15 positive & negative words with coefficients | `top_features.*` |
+
+##### Page that calls the live API (Predict)
+The **Predict** page sends a `POST` request to the Flask backend:
+```
+POST http://localhost:5000/api/predict
+Content-Type: application/json
+
+{ "review": "This movie was absolutely amazing!" }
+```
+The Flask backend loads the pretrained model + TF-IDF vectorizer, vectorizes the input, runs prediction, and returns:
+```json
+{
+  "sentiment": "Positive",
+  "confidence": 98.5,
+  "positive_prob": 98.5,
+  "negative_prob": 1.5,
+  "word_count": 6
+}
+```
 
 ---
 
